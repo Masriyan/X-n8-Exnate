@@ -1,0 +1,198 @@
+{
+    "name": "X-n8 EDR - Ransomware Response",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "edr/ransomware",
+                "options": {}
+            },
+            "id": "webhook",
+            "name": "Ransomware Alert",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                250,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const alert = $input.first().json;\n\nconst ransomwareIndicators = {\n  massFileRename: (alert.fileRenameCount || 0) > 100,\n  suspiciousExtension: /\\.(locked|encrypted|crypt|ransom|wcry)/i.test(alert.newExtension || ''),\n  shadowDeleteAttempt: alert.events?.some(e => e.includes('vssadmin') || e.includes('wmic shadowcopy')),\n  highWriteVolume: (alert.fileWriteMB || 0) > 500,\n  ransomNote: alert.events?.some(e => e.includes('readme') || e.includes('decrypt'))\n};\n\nconst indicatorCount = Object.values(ransomwareIndicators).filter(Boolean).length;\n\nreturn {\n  json: {\n    ...alert,\n    ransomware_indicators: ransomwareIndicators,\n    indicator_count: indicatorCount,\n    is_ransomware: indicatorCount >= 2,\n    severity: indicatorCount >= 3 ? 'critical' : indicatorCount >= 2 ? 'high' : 'medium',\n    use_case_id: 'UC-071'\n  }\n};"
+            },
+            "id": "analyze-indicators",
+            "name": "Analyze Ransomware Indicators",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                450,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "boolean": [
+                        {
+                            "value1": "={{ $json.is_ransomware }}",
+                            "operation": "equal",
+                            "value2": true
+                        }
+                    ]
+                }
+            },
+            "id": "is-ransomware",
+            "name": "Is Ransomware?",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 1,
+            "position": [
+                650,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ $env.EDR_URL }}/api/agents/{{ $json.hostId }}/isolate"
+            },
+            "id": "isolate",
+            "name": "Isolate Host",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                850,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ $env.EDR_URL }}/api/agents/{{ $json.hostId }}/kill-process",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "processId",
+                            "value": "={{ $json.maliciousProcessId }}"
+                        }
+                    ]
+                }
+            },
+            "id": "kill-process",
+            "name": "Kill Malicious Process",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                850,
+                350
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ $env.XSOAR_URL }}/incident",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "name",
+                            "value": "RANSOMWARE DETECTED - {{ $json.hostname }}"
+                        },
+                        {
+                            "name": "severity",
+                            "value": "4"
+                        },
+                        {
+                            "name": "type",
+                            "value": "Ransomware"
+                        }
+                    ]
+                }
+            },
+            "id": "xsoar-incident",
+            "name": "Create IR Incident",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                1050,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "to": "={{ $env.IR_TEAM_PHONE }}",
+                "message": "RANSOMWARE ALERT: {{ $json.hostname }} has been isolated. Indicators: {{ $json.indicator_count }}/5. Immediate response required."
+            },
+            "id": "sms-alert",
+            "name": "SMS IR Team",
+            "type": "n8n-nodes-base.twilio",
+            "typeVersion": 1,
+            "position": [
+                1050,
+                350
+            ]
+        }
+    ],
+    "connections": {
+        "Ransomware Alert": {
+            "main": [
+                [
+                    {
+                        "node": "Analyze Ransomware Indicators",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Analyze Ransomware Indicators": {
+            "main": [
+                [
+                    {
+                        "node": "Is Ransomware?",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Is Ransomware?": {
+            "main": [
+                [
+                    {
+                        "node": "Isolate Host",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Kill Malicious Process",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Isolate Host": {
+            "main": [
+                [
+                    {
+                        "node": "Create IR Incident",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "SMS IR Team",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "tags": [
+        "x-n8",
+        "edr",
+        "ransomware",
+        "UC-071"
+    ]
+}

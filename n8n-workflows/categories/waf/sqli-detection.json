@@ -1,0 +1,153 @@
+{
+    "name": "X-n8 WAF - SQL Injection Response",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "waf/sqli"
+            },
+            "id": "webhook",
+            "name": "WAF Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                250,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const event = $input.first().json;\nconst sqliPatterns = [/union.*select/i, /or.*(1=1|'=')/i, /;.*drop\\s+table/i, /'.*or.*'/i];\nconst isSqli = event.ruleId === 'sqli' || sqliPatterns.some(p => p.test(event.payload || ''));\n\nif (isSqli) {\n  return { json: { alert_type: 'sql_injection', attacker_ip: event.srcIP, target_url: event.uri, payload_preview: (event.payload || '').substring(0, 100), severity: 'critical', use_case_id: 'UC-206' } };\n}\nreturn { json: { skip: true } };"
+            },
+            "id": "detect",
+            "name": "Detect SQLi",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                450,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "boolean": [
+                        {
+                            "value1": "={{ $json.skip }}",
+                            "operation": "notEqual",
+                            "value2": true
+                        }
+                    ]
+                }
+            },
+            "id": "filter",
+            "name": "Is SQLi?",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 1,
+            "position": [
+                650,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ $env.WAF_URL }}/api/blocklist",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "ip",
+                            "value": "={{ $json.attacker_ip }}"
+                        },
+                        {
+                            "name": "duration",
+                            "value": "3600"
+                        }
+                    ]
+                }
+            },
+            "id": "block",
+            "name": "Block IP",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                850,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ $env.XSOAR_URL }}/incident",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "name",
+                            "value": "SQL Injection Attack from {{ $json.attacker_ip }}"
+                        },
+                        {
+                            "name": "severity",
+                            "value": "4"
+                        }
+                    ]
+                }
+            },
+            "id": "xsoar",
+            "name": "Create Incident",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                850,
+                350
+            ]
+        }
+    ],
+    "connections": {
+        "WAF Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Detect SQLi",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Detect SQLi": {
+            "main": [
+                [
+                    {
+                        "node": "Is SQLi?",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Is SQLi?": {
+            "main": [
+                [
+                    {
+                        "node": "Block IP",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Create Incident",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "tags": [
+        "x-n8",
+        "waf",
+        "sqli",
+        "UC-206"
+    ]
+}

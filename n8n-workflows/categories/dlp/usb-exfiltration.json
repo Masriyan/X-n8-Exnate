@@ -1,0 +1,146 @@
+{
+    "name": "X-n8 DLP - USB Exfiltration Response",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "dlp/usb-event",
+                "options": {}
+            },
+            "id": "webhook",
+            "name": "DLP Agent Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                250,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const event = $input.first().json;\nconst thresholdMB = 100;\nconst sensitivePatterns = [/\\.docx?$/, /\\.xlsx?$/, /\\.pdf$/, /\\.pptx?$/, /\\.sql$/, /\\.csv$/];\n\nif (event.targetDevice?.isRemovable && event.fileSizeMB > thresholdMB) {\n  const isSensitive = sensitivePatterns.some(p => p.test(event.fileName));\n  \n  return {\n    json: {\n      alert_type: 'usb_exfiltration',\n      user: event.username,\n      host: event.hostname,\n      file: event.fileName,\n      size_mb: event.fileSizeMB,\n      device_id: event.deviceId,\n      is_sensitive: isSensitive,\n      severity: isSensitive ? 'high' : 'medium',\n      use_case_id: 'UC-047'\n    }\n  };\n}\n\nreturn { json: { skip: true } };"
+            },
+            "id": "detect-exfil",
+            "name": "Detect Exfiltration",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                450,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "boolean": [
+                        {
+                            "value1": "={{ $json.skip }}",
+                            "operation": "notEqual",
+                            "value2": true
+                        }
+                    ]
+                }
+            },
+            "id": "is-exfil",
+            "name": "Is Exfiltration?",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 1,
+            "position": [
+                650,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ $env.XSOAR_URL }}/incident",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "name",
+                            "value": "DLP: USB Exfiltration by {{ $json.user }}"
+                        },
+                        {
+                            "name": "severity",
+                            "value": "={{ $json.is_sensitive ? 3 : 2 }}"
+                        },
+                        {
+                            "name": "type",
+                            "value": "DLP"
+                        }
+                    ]
+                }
+            },
+            "id": "xsoar-incident",
+            "name": "Create DLP Incident",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                850,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "to": "={{ $json.user }}@company.com",
+                "subject": "Security Alert: Data Transfer Detected",
+                "body": "A large file transfer to removable media was detected from your workstation. If this was not authorized, please contact security immediately."
+            },
+            "id": "notify-user",
+            "name": "Notify User",
+            "type": "n8n-nodes-base.emailSend",
+            "typeVersion": 2,
+            "position": [
+                850,
+                350
+            ]
+        }
+    ],
+    "connections": {
+        "DLP Agent Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Detect Exfiltration",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Detect Exfiltration": {
+            "main": [
+                [
+                    {
+                        "node": "Is Exfiltration?",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Is Exfiltration?": {
+            "main": [
+                [
+                    {
+                        "node": "Create DLP Incident",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Notify User",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "tags": [
+        "x-n8",
+        "dlp",
+        "usb",
+        "UC-047"
+    ]
+}

@@ -1,0 +1,179 @@
+{
+    "name": "X-n8 Firewall - Auto IP Block",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "firewall/threat-intel",
+                "options": {}
+            },
+            "id": "webhook",
+            "name": "Threat Intel Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                250,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const alert = $input.first().json;\n\n// Check if external IP with high threat score\nconst isExternal = !alert.sourceIP.match(/^(10\\.|172\\.(1[6-9]|2\\d|3[01])\\.|192\\.168\\.)/);\nconst highThreat = alert.threatScore >= 80;\n\nif (isExternal && highThreat) {\n  return {\n    json: {\n      action: 'block_ip',\n      ip: alert.sourceIP,\n      reason: alert.threatCategory || 'High threat score',\n      threat_score: alert.threatScore,\n      duration: '24h',\n      severity: 'high',\n      use_case_id: 'UC-131'\n    }\n  };\n}\n\nreturn { json: { skip: true } };"
+            },
+            "id": "evaluate-threat",
+            "name": "Evaluate Threat",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                450,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "boolean": [
+                        {
+                            "value1": "={{ $json.skip }}",
+                            "operation": "notEqual",
+                            "value2": true
+                        }
+                    ]
+                }
+            },
+            "id": "should-block",
+            "name": "Should Block?",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 1,
+            "position": [
+                650,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ $env.PALO_ALTO_URL }}/api/?type=config&action=set&xpath=/config/devices/entry/vsys/entry/address/entry[@name='{{ $json.ip }}']",
+                "authentication": "genericCredentialType"
+            },
+            "id": "create-address",
+            "name": "Create Address Object",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                850,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ $env.PALO_ALTO_URL }}/api/?type=config&action=set&xpath=/config/devices/entry/vsys/entry/address-group/entry[@name='XN8-Blocklist']/static/member[text()='{{ $json.ip }}']"
+            },
+            "id": "add-to-blocklist",
+            "name": "Add to Blocklist",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                1050,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ $env.PALO_ALTO_URL }}/api/?type=commit&cmd=<commit></commit>"
+            },
+            "id": "commit-config",
+            "name": "Commit Firewall",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                1250,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "channel": "#network-security",
+                "text": ":no_entry: *IP Blocked*\n*IP:* {{ $json.ip }}\n*Reason:* {{ $json.reason }}\n*Threat Score:* {{ $json.threat_score }}\n*Duration:* {{ $json.duration }}"
+            },
+            "id": "slack-notify",
+            "name": "Notify Team",
+            "type": "n8n-nodes-base.slack",
+            "typeVersion": 2,
+            "position": [
+                1250,
+                350
+            ]
+        }
+    ],
+    "connections": {
+        "Threat Intel Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Evaluate Threat",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Evaluate Threat": {
+            "main": [
+                [
+                    {
+                        "node": "Should Block?",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Should Block?": {
+            "main": [
+                [
+                    {
+                        "node": "Create Address Object",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Create Address Object": {
+            "main": [
+                [
+                    {
+                        "node": "Add to Blocklist",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Add to Blocklist": {
+            "main": [
+                [
+                    {
+                        "node": "Commit Firewall",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Notify Team",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "tags": [
+        "x-n8",
+        "firewall",
+        "auto-block",
+        "UC-131"
+    ]
+}

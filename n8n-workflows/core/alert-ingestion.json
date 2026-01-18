@@ -1,0 +1,175 @@
+{
+    "name": "X-n8 Alert Ingestion Master Workflow",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "xn8-ingest",
+                "responseMode": "responseNode",
+                "options": {}
+            },
+            "id": "webhook-receiver",
+            "name": "Alert Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                250,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "// Normalize incoming alert to X-n8 unified schema\nconst raw = $input.first().json;\n\nconst normalized = {\n  alert_id: raw.id || raw.alert_id || crypto.randomUUID(),\n  timestamp: raw.timestamp || new Date().toISOString(),\n  source: detectSource(raw),\n  severity: normalizeSeverity(raw.severity || raw.priority),\n  event_type: raw.event_type || raw.type || 'unknown',\n  raw_event: raw,\n  entities: extractEntities(raw),\n  mitre_attack: raw.mitre || null,\n  context: {}\n};\n\nfunction detectSource(data) {\n  if (data.source) return data.source.toLowerCase();\n  if (data._source) return 'elastic';\n  if (data.result) return 'splunk';\n  if (data.TenantId) return 'sentinel';\n  return 'unknown';\n}\n\nfunction normalizeSeverity(sev) {\n  const map = {\n    'critical': 'critical', 'crit': 'critical', '1': 'critical',\n    'high': 'high', '2': 'high',\n    'medium': 'medium', 'med': 'medium', '3': 'medium',\n    'low': 'low', '4': 'low',\n    'info': 'informational', 'informational': 'informational'\n  };\n  return map[String(sev).toLowerCase()] || 'medium';\n}\n\nfunction extractEntities(data) {\n  return {\n    src_ip: data.src_ip || data.source_ip || data.SourceIP,\n    dst_ip: data.dst_ip || data.dest_ip || data.DestinationIP,\n    user: data.user || data.username || data.User,\n    host: data.host || data.hostname || data.Computer,\n    domain: data.domain || data.Domain,\n    file_hash: data.hash || data.md5 || data.sha256,\n    process: data.process || data.ProcessName,\n    url: data.url || data.URL\n  };\n}\n\nreturn { json: normalized };"
+            },
+            "id": "normalize-alert",
+            "name": "Normalize Alert",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                450,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "operation": "set",
+                "key": "={{ $json.alert_id }}:hash",
+                "value": "={{ JSON.stringify($json) }}",
+                "expiration": 300
+            },
+            "id": "redis-dedup",
+            "name": "Redis Dedup Check",
+            "type": "n8n-nodes-base.redis",
+            "typeVersion": 1,
+            "position": [
+                650,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "boolean": [
+                        {
+                            "value1": "={{ $json.isDuplicate }}",
+                            "operation": "equal",
+                            "value2": false
+                        }
+                    ]
+                }
+            },
+            "id": "dedup-filter",
+            "name": "Is New Alert?",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 1,
+            "position": [
+                850,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "workflowId": "ai-analysis",
+                "options": {}
+            },
+            "id": "ai-analysis-subworkflow",
+            "name": "AI Analysis",
+            "type": "n8n-nodes-base.executeWorkflow",
+            "typeVersion": 1,
+            "position": [
+                1050,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "respondWith": "json",
+                "responseBody": "={{ { status: 'accepted', alert_id: $json.alert_id } }}"
+            },
+            "id": "respond-webhook",
+            "name": "Respond OK",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1,
+            "position": [
+                1250,
+                200
+            ]
+        }
+    ],
+    "connections": {
+        "Alert Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Normalize Alert",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Normalize Alert": {
+            "main": [
+                [
+                    {
+                        "node": "Redis Dedup Check",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Redis Dedup Check": {
+            "main": [
+                [
+                    {
+                        "node": "Is New Alert?",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Is New Alert?": {
+            "main": [
+                [
+                    {
+                        "node": "AI Analysis",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Respond OK",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "AI Analysis": {
+            "main": [
+                [
+                    {
+                        "node": "Respond OK",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "settings": {
+        "executionOrder": "v1"
+    },
+    "staticData": null,
+    "meta": {
+        "instanceId": "xn8-soc"
+    },
+    "tags": [
+        "x-n8",
+        "core",
+        "ingestion"
+    ]
+}

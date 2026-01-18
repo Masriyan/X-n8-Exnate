@@ -1,0 +1,177 @@
+{
+    "name": "X-n8 Deduplication & Clustering Workflow",
+    "nodes": [
+        {
+            "parameters": {},
+            "id": "start",
+            "name": "Start",
+            "type": "n8n-nodes-base.manualTrigger",
+            "typeVersion": 1,
+            "position": [
+                250,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "// Generate dedup hash based on alert content\nconst alert = $input.first().json;\nconst crypto = require('crypto');\n\n// Create hash from key fields\nconst hashInput = [\n  alert.entities?.src_ip || '',\n  alert.entities?.dst_ip || '',\n  alert.event_type || '',\n  Math.floor(new Date(alert.timestamp).getTime() / 300000) // 5-min window\n].join('|');\n\nconst dedupHash = crypto.createHash('sha256').update(hashInput).digest('hex');\n\n// Create entity key for clustering\nconst entityKey = alert.entities?.user || \n                  alert.entities?.host || \n                  alert.entities?.src_ip || \n                  'unknown';\n\nreturn {\n  json: {\n    ...alert,\n    _dedup: {\n      hash: dedupHash,\n      entity_key: entityKey,\n      window_id: Math.floor(new Date(alert.timestamp).getTime() / 300000)\n    }\n  }\n};"
+            },
+            "id": "generate-hash",
+            "name": "Generate Dedup Hash",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                450,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "operation": "get",
+                "key": "={{ 'xn8:dedup:' + $json._dedup.hash }}"
+            },
+            "id": "redis-check",
+            "name": "Check Redis",
+            "type": "n8n-nodes-base.redis",
+            "typeVersion": 1,
+            "position": [
+                650,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "string": [
+                        {
+                            "value1": "={{ $json.value }}",
+                            "operation": "isEmpty"
+                        }
+                    ]
+                }
+            },
+            "id": "is-new",
+            "name": "Is New?",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 1,
+            "position": [
+                850,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "operation": "set",
+                "key": "={{ 'xn8:dedup:' + $('Generate Dedup Hash').first().json._dedup.hash }}",
+                "value": "={{ JSON.stringify({ count: 1, first_seen: $('Generate Dedup Hash').first().json.timestamp }) }}",
+                "expiration": 3600
+            },
+            "id": "redis-set-new",
+            "name": "Store New Alert",
+            "type": "n8n-nodes-base.redis",
+            "typeVersion": 1,
+            "position": [
+                1050,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "// Increment existing alert count\nconst existing = JSON.parse($('Check Redis').first().json.value);\nexisting.count++;\nexisting.last_seen = new Date().toISOString();\n\nreturn { json: existing };"
+            },
+            "id": "increment-count",
+            "name": "Increment Count",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1050,
+                400
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "// Mark as new for processing\nconst alert = $('Generate Dedup Hash').first().json;\nreturn { json: { ...alert, _is_duplicate: false, _cluster_count: 1 } };"
+            },
+            "id": "mark-new",
+            "name": "Mark as New",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1250,
+                200
+            ]
+        }
+    ],
+    "connections": {
+        "Start": {
+            "main": [
+                [
+                    {
+                        "node": "Generate Dedup Hash",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Generate Dedup Hash": {
+            "main": [
+                [
+                    {
+                        "node": "Check Redis",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Check Redis": {
+            "main": [
+                [
+                    {
+                        "node": "Is New?",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Is New?": {
+            "main": [
+                [
+                    {
+                        "node": "Store New Alert",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Increment Count",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Store New Alert": {
+            "main": [
+                [
+                    {
+                        "node": "Mark as New",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "settings": {
+        "executionOrder": "v1"
+    },
+    "tags": [
+        "x-n8",
+        "core",
+        "deduplication"
+    ]
+}

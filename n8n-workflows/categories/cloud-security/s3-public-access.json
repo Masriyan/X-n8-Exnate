@@ -1,0 +1,152 @@
+{
+    "name": "X-n8 Cloud Security - S3 Public Access",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "cloud/s3-public",
+                "options": {}
+            },
+            "id": "webhook",
+            "name": "CloudTrail Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                250,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const event = $input.first().json;\nconst publicIndicators = ['AllUsers', 'AuthenticatedUsers', '*'];\n\nif (event.eventName && event.eventName.includes('PutBucket')) {\n  const policy = JSON.stringify(event.requestParameters || {});\n  const isPublic = publicIndicators.some(i => policy.includes(i));\n  \n  if (isPublic) {\n    return {\n      json: {\n        alert_type: 's3_public_access',\n        bucket: event.requestParameters?.bucketName,\n        actor: event.userIdentity?.arn,\n        event_time: event.eventTime,\n        severity: 'critical',\n        use_case_id: 'UC-022'\n      }\n    };\n  }\n}\n\nreturn { json: { skip: true } };"
+            },
+            "id": "detect-public",
+            "name": "Detect Public Access",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                450,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "boolean": [
+                        {
+                            "value1": "={{ $json.skip }}",
+                            "operation": "notEqual",
+                            "value2": true
+                        }
+                    ]
+                }
+            },
+            "id": "filter",
+            "name": "Is Public?",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 1,
+            "position": [
+                650,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ $env.XSOAR_URL }}/incident",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "name",
+                            "value": "CRITICAL: S3 Bucket {{ $json.bucket }} Made Public"
+                        },
+                        {
+                            "name": "severity",
+                            "value": "4"
+                        },
+                        {
+                            "name": "type",
+                            "value": "Cloud Security"
+                        }
+                    ]
+                }
+            },
+            "id": "xsoar-critical",
+            "name": "Create Critical Incident",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                850,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "resource": "s3",
+                "operation": "putBucketPublicAccessBlock",
+                "bucket": "={{ $json.bucket }}",
+                "publicAccessBlockConfiguration": {
+                    "BlockPublicAcls": true,
+                    "IgnorePublicAcls": true,
+                    "BlockPublicPolicy": true,
+                    "RestrictPublicBuckets": true
+                }
+            },
+            "id": "aws-remediate",
+            "name": "Block Public Access",
+            "type": "n8n-nodes-base.aws",
+            "typeVersion": 1,
+            "position": [
+                850,
+                400
+            ]
+        }
+    ],
+    "connections": {
+        "CloudTrail Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Detect Public Access",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Detect Public Access": {
+            "main": [
+                [
+                    {
+                        "node": "Is Public?",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Is Public?": {
+            "main": [
+                [
+                    {
+                        "node": "Create Critical Incident",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Block Public Access",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "tags": [
+        "x-n8",
+        "cloud-security",
+        "aws",
+        "UC-022"
+    ]
+}

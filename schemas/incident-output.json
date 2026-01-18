@@ -1,0 +1,101 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://x-n8.io/schemas/incident-output.json",
+    "title": "X-n8 to XSOAR Incident Schema",
+    "description": "Standard output schema for incidents sent from n8n to XSOAR",
+    "type": "object",
+    "required": [
+        "name",
+        "severity",
+        "type",
+        "xn8_metadata"
+    ],
+    "properties": {
+        "name": {
+            "type": "string",
+            "description": "AI-generated incident title"
+        },
+        "severity": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4,
+            "description": "XSOAR severity (0=Unknown, 1=Low, 2=Medium, 3=High, 4=Critical)"
+        },
+        "type": {
+            "type": "string",
+            "description": "Incident type for XSOAR classification"
+        },
+        "labels": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "type": "string"
+                    },
+                    "value": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "xn8_metadata": {
+            "type": "object",
+            "required": [
+                "correlation_id",
+                "ai_summary"
+            ],
+            "properties": {
+                "correlation_id": {
+                    "type": "string"
+                },
+                "alert_count": {
+                    "type": "integer"
+                },
+                "first_seen": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "last_seen": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "ai_summary": {
+                    "type": "string"
+                },
+                "ai_severity_score": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100
+                },
+                "ai_confidence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                },
+                "recommended_actions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "mitre_mapping": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "affected_entities": {
+                    "type": "object"
+                },
+                "enrichment_data": {
+                    "type": "object"
+                }
+            }
+        },
+        "rawJSON": {
+            "type": "object",
+            "description": "Original clustered alerts"
+        }
+    }
+}

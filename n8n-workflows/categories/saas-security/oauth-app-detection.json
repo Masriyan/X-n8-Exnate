@@ -1,0 +1,140 @@
+{
+    "name": "X-n8 SaaS - OAuth App Detection",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "saas/oauth-consent"
+            },
+            "id": "webhook",
+            "name": "OAuth Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                250,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const consent = $input.first().json;\nconst riskyPermissions = ['Mail.Read', 'Mail.Send', 'Directory.Read.All', 'Files.ReadWrite.All', 'User.ReadWrite.All'];\nconst hasRisky = consent.permissions?.some(p => riskyPermissions.includes(p));\n\nif (hasRisky) {\n  return { json: { alert_type: 'risky_oauth_consent', user: consent.user, app: consent.appName, app_id: consent.appId, permissions: consent.permissions, severity: 'critical', use_case_id: 'UC-186' } };\n}\nreturn { json: { skip: true } };"
+            },
+            "id": "detect",
+            "name": "Detect Risky OAuth",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                450,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "boolean": [
+                        {
+                            "value1": "={{ $json.skip }}",
+                            "operation": "notEqual",
+                            "value2": true
+                        }
+                    ]
+                }
+            },
+            "id": "filter",
+            "name": "Is Risky?",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 1,
+            "position": [
+                650,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "method": "DELETE",
+                "url": "={{ $env.GRAPH_URL }}/users/{{ $json.user }}/oauth2PermissionGrants/{{ $json.app_id }}"
+            },
+            "id": "revoke",
+            "name": "Revoke Consent",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                850,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ $env.XSOAR_URL }}/incident",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "name",
+                            "value": "Risky OAuth App: {{ $json.app }}"
+                        },
+                        {
+                            "name": "severity",
+                            "value": "4"
+                        }
+                    ]
+                }
+            },
+            "id": "xsoar",
+            "name": "Create Incident",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                850,
+                350
+            ]
+        }
+    ],
+    "connections": {
+        "OAuth Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Detect Risky OAuth",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Detect Risky OAuth": {
+            "main": [
+                [
+                    {
+                        "node": "Is Risky?",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Is Risky?": {
+            "main": [
+                [
+                    {
+                        "node": "Revoke Consent",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Create Incident",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "tags": [
+        "x-n8",
+        "saas-security",
+        "oauth",
+        "UC-186"
+    ]
+}

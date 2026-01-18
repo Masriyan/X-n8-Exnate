@@ -1,0 +1,179 @@
+{
+    "name": "X-n8 Email Security - BEC Detection",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "email/bec-detection",
+                "options": {}
+            },
+            "id": "webhook",
+            "name": "Email Gateway Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                250,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const email = $input.first().json;\nconst executives = ['CEO', 'CFO', 'COO', 'CTO', 'CISO', 'John Smith', 'Jane Doe'];\nconst urgentPatterns = /urgent|wire|transfer|immediately|confidential|secret|asap|payment/i;\nconst companyDomain = '@company.com';\n\n// Check for executive impersonation\nconst impersonatesExec = executives.some(e => \n  email.fromDisplayName?.toLowerCase().includes(e.toLowerCase())\n);\n\n// Check if from external domain\nconst isExternal = !email.fromAddress?.endsWith(companyDomain);\n\n// Check for urgent financial language\nconst hasUrgentFinancial = urgentPatterns.test(email.subject + ' ' + email.body);\n\nif (impersonatesExec && isExternal && hasUrgentFinancial) {\n  return {\n    json: {\n      alert_type: 'bec_ceo_fraud',\n      from_display: email.fromDisplayName,\n      from_address: email.fromAddress,\n      to: email.to,\n      subject: email.subject,\n      severity: 'critical',\n      use_case_id: 'UC-092'\n    }\n  };\n}\n\nreturn { json: { skip: true } };"
+            },
+            "id": "detect-bec",
+            "name": "Detect BEC",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                450,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "boolean": [
+                        {
+                            "value1": "={{ $json.skip }}",
+                            "operation": "notEqual",
+                            "value2": true
+                        }
+                    ]
+                }
+            },
+            "id": "is-bec",
+            "name": "Is BEC?",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 1,
+            "position": [
+                650,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ $env.EMAIL_GATEWAY_URL }}/api/quarantine",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "messageId",
+                            "value": "={{ $json.messageId }}"
+                        }
+                    ]
+                }
+            },
+            "id": "quarantine",
+            "name": "Quarantine Email",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                850,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "channel": "#security-alerts",
+                "text": ":rotating_light: *BEC/CEO Fraud Detected*\n*Impersonating:* {{ $json.from_display }}\n*Actual Address:* {{ $json.from_address }}\n*Target:* {{ $json.to }}\n*Subject:* {{ $json.subject }}"
+            },
+            "id": "slack-alert",
+            "name": "Alert Security",
+            "type": "n8n-nodes-base.slack",
+            "typeVersion": 2,
+            "position": [
+                850,
+                350
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ $env.XSOAR_URL }}/incident",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "name",
+                            "value": "BEC Attack - Impersonating {{ $json.from_display }}"
+                        },
+                        {
+                            "name": "severity",
+                            "value": "4"
+                        },
+                        {
+                            "name": "type",
+                            "value": "Email Security"
+                        }
+                    ]
+                }
+            },
+            "id": "xsoar-incident",
+            "name": "Create Incident",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                1050,
+                200
+            ]
+        }
+    ],
+    "connections": {
+        "Email Gateway Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Detect BEC",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Detect BEC": {
+            "main": [
+                [
+                    {
+                        "node": "Is BEC?",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Is BEC?": {
+            "main": [
+                [
+                    {
+                        "node": "Quarantine Email",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Alert Security",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Quarantine Email": {
+            "main": [
+                [
+                    {
+                        "node": "Create Incident",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "tags": [
+        "x-n8",
+        "email-security",
+        "bec",
+        "UC-092"
+    ]
+}

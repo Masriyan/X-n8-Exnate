@@ -1,0 +1,108 @@
+{
+    "name": "X-n8 API Security - Shadow API Detection",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "api-security/shadow-api",
+                "options": {}
+            },
+            "id": "webhook",
+            "name": "API Gateway Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                250,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const event = $input.first().json;\nconst knownEndpoints = [\n  '/api/v1/users',\n  '/api/v1/products',\n  '/api/v1/orders',\n  '/api/v2/auth'\n];\n\nconst isKnown = knownEndpoints.some(e => event.endpoint.startsWith(e));\n\nif (!isKnown) {\n  return {\n    json: {\n      alert_type: 'shadow_api_detected',\n      endpoint: event.endpoint,\n      method: event.method,\n      source_ip: event.clientIP,\n      request_count: event.count || 1,\n      severity: 'medium',\n      use_case_id: 'UC-001'\n    }\n  };\n}\n\nreturn { json: { skip: true } };"
+            },
+            "id": "detect-shadow-api",
+            "name": "Detect Shadow API",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                450,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "boolean": [
+                        {
+                            "value1": "={{ $json.skip }}",
+                            "operation": "notEqual",
+                            "value2": true
+                        }
+                    ]
+                }
+            },
+            "id": "filter-alerts",
+            "name": "Filter Alerts",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 1,
+            "position": [
+                650,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "channel": "#api-security",
+                "text": ":warning: *Shadow API Detected*\n*Endpoint:* `{{ $json.endpoint }}`\n*Method:* {{ $json.method }}\n*Source IP:* {{ $json.source_ip }}"
+            },
+            "id": "slack-alert",
+            "name": "Notify API Team",
+            "type": "n8n-nodes-base.slack",
+            "typeVersion": 2,
+            "position": [
+                850,
+                300
+            ]
+        }
+    ],
+    "connections": {
+        "API Gateway Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Detect Shadow API",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Detect Shadow API": {
+            "main": [
+                [
+                    {
+                        "node": "Filter Alerts",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Filter Alerts": {
+            "main": [
+                [
+                    {
+                        "node": "Notify API Team",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "tags": [
+        "x-n8",
+        "api-security",
+        "UC-001"
+    ]
+}

@@ -1,0 +1,120 @@
+{
+    "name": "X-n8 Insider Threat - After Hours Access",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "insider/file-access"
+            },
+            "id": "webhook",
+            "name": "File Access Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                250,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const event = $input.first().json;\nconst hour = new Date(event.timestamp).getHours();\nconst isAfterHours = hour < 6 || hour > 22;\nconst sensitiveLabels = ['confidential', 'secret', 'restricted', 'pii'];\nconst isSensitive = sensitiveLabels.some(l => event.fileLabel?.toLowerCase().includes(l));\n\nif (isAfterHours && isSensitive) {\n  return { json: { alert_type: 'after_hours_sensitive', user: event.user, file: event.fileName, label: event.fileLabel, hour: hour, severity: 'medium', use_case_id: 'UC-167' } };\n}\nreturn { json: { skip: true } };"
+            },
+            "id": "detect",
+            "name": "Detect After Hours",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                450,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "boolean": [
+                        {
+                            "value1": "={{ $json.skip }}",
+                            "operation": "notEqual",
+                            "value2": true
+                        }
+                    ]
+                }
+            },
+            "id": "filter",
+            "name": "Filter",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 1,
+            "position": [
+                650,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ $env.XSOAR_URL }}/incident",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "name",
+                            "value": "After Hours Access: {{ $json.user }}"
+                        },
+                        {
+                            "name": "severity",
+                            "value": "2"
+                        }
+                    ]
+                }
+            },
+            "id": "xsoar",
+            "name": "Create Incident",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                850,
+                300
+            ]
+        }
+    ],
+    "connections": {
+        "File Access Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Detect After Hours",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Detect After Hours": {
+            "main": [
+                [
+                    {
+                        "node": "Filter",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Filter": {
+            "main": [
+                [
+                    {
+                        "node": "Create Incident",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "tags": [
+        "x-n8",
+        "insider-threat",
+        "UC-167"
+    ]
+}

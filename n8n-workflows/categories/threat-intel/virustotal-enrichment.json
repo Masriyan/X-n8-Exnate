@@ -1,0 +1,148 @@
+{
+    "name": "X-n8 Threat Intel - VirusTotal Enrichment",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "threat-intel/enrich"
+            },
+            "id": "webhook",
+            "name": "Enrichment Request",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                250,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "method": "GET",
+                "url": "https://www.virustotal.com/api/v3/files/{{ $json.hash }}",
+                "authentication": "genericCredentialType",
+                "genericAuthType": "httpHeaderAuth"
+            },
+            "id": "vt-lookup",
+            "name": "VirusTotal Lookup",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                450,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const vtResult = $input.first().json;\nconst malicious = vtResult.data?.attributes?.last_analysis_stats?.malicious || 0;\nconst total = vtResult.data?.attributes?.last_analysis_stats?.total || 0;\n\nreturn {\n  json: {\n    hash: vtResult.data?.id,\n    malicious_count: malicious,\n    total_engines: total,\n    detection_rate: (malicious / total * 100).toFixed(1) + '%',\n    verdict: malicious > 10 ? 'malicious' : malicious > 3 ? 'suspicious' : 'clean',\n    severity: malicious > 10 ? 'critical' : malicious > 3 ? 'high' : 'low',\n    use_case_id: 'UC-226'\n  }\n};"
+            },
+            "id": "parse",
+            "name": "Parse VT Result",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                650,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "string": [
+                        {
+                            "value1": "={{ $json.verdict }}",
+                            "operation": "equal",
+                            "value2": "malicious"
+                        }
+                    ]
+                }
+            },
+            "id": "is-malicious",
+            "name": "Is Malicious?",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 1,
+            "position": [
+                850,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ $env.XSOAR_URL }}/incident",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "name",
+                            "value": "Malicious Hash Detected: {{ $json.hash }}"
+                        },
+                        {
+                            "name": "severity",
+                            "value": "4"
+                        }
+                    ]
+                }
+            },
+            "id": "xsoar",
+            "name": "Create Incident",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                1050,
+                200
+            ]
+        }
+    ],
+    "connections": {
+        "Enrichment Request": {
+            "main": [
+                [
+                    {
+                        "node": "VirusTotal Lookup",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "VirusTotal Lookup": {
+            "main": [
+                [
+                    {
+                        "node": "Parse VT Result",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Parse VT Result": {
+            "main": [
+                [
+                    {
+                        "node": "Is Malicious?",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Is Malicious?": {
+            "main": [
+                [
+                    {
+                        "node": "Create Incident",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "tags": [
+        "x-n8",
+        "threat-intel",
+        "virustotal",
+        "UC-226"
+    ]
+}

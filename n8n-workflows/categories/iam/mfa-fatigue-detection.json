@@ -1,0 +1,179 @@
+{
+    "name": "X-n8 IAM - MFA Fatigue Detection",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "iam/mfa-events",
+                "options": {}
+            },
+            "id": "webhook",
+            "name": "MFA Events Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                250,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const events = $input.all();\nconst userEvents = {};\n\n// Group by user\nevents.forEach(e => {\n  const user = e.json.user;\n  if (!userEvents[user]) userEvents[user] = { rejected: 0, accepted: 0 };\n  if (e.json.result === 'rejected') userEvents[user].rejected++;\n  if (e.json.result === 'accepted') userEvents[user].accepted++;\n});\n\n// Detect MFA fatigue pattern\nconst alerts = [];\nObject.entries(userEvents).forEach(([user, counts]) => {\n  if (counts.rejected >= 5 && counts.accepted === 1) {\n    alerts.push({\n      alert_type: 'mfa_fatigue',\n      user: user,\n      rejected_count: counts.rejected,\n      severity: 'critical',\n      use_case_id: 'UC-112'\n    });\n  }\n});\n\nif (alerts.length > 0) {\n  return alerts.map(a => ({ json: a }));\n}\n\nreturn [{ json: { skip: true } }];"
+            },
+            "id": "detect-fatigue",
+            "name": "Detect MFA Fatigue",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                450,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "boolean": [
+                        {
+                            "value1": "={{ $json.skip }}",
+                            "operation": "notEqual",
+                            "value2": true
+                        }
+                    ]
+                }
+            },
+            "id": "is-attack",
+            "name": "Is Attack?",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 1,
+            "position": [
+                650,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ $env.AZURE_AD_URL }}/users/{{ $json.user }}/revokeSignInSessions"
+            },
+            "id": "revoke-sessions",
+            "name": "Revoke All Sessions",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                850,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "method": "PATCH",
+                "url": "={{ $env.AZURE_AD_URL }}/users/{{ $json.user }}",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "accountEnabled",
+                            "value": "false"
+                        }
+                    ]
+                }
+            },
+            "id": "disable-account",
+            "name": "Disable Account",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                850,
+                350
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ $env.XSOAR_URL }}/incident",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "name",
+                            "value": "MFA Fatigue Attack - {{ $json.user }}"
+                        },
+                        {
+                            "name": "severity",
+                            "value": "4"
+                        },
+                        {
+                            "name": "type",
+                            "value": "IAM Security"
+                        }
+                    ]
+                }
+            },
+            "id": "xsoar-incident",
+            "name": "Create Incident",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                1050,
+                200
+            ]
+        }
+    ],
+    "connections": {
+        "MFA Events Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Detect MFA Fatigue",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Detect MFA Fatigue": {
+            "main": [
+                [
+                    {
+                        "node": "Is Attack?",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Is Attack?": {
+            "main": [
+                [
+                    {
+                        "node": "Revoke All Sessions",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Disable Account",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Revoke All Sessions": {
+            "main": [
+                [
+                    {
+                        "node": "Create Incident",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "tags": [
+        "x-n8",
+        "iam",
+        "mfa-fatigue",
+        "UC-112"
+    ]
+}

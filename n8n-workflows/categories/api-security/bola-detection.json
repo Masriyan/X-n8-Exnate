@@ -1,0 +1,146 @@
+{
+    "name": "X-n8 API Security - BOLA Detection",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "api-security/bola",
+                "options": {}
+            },
+            "id": "webhook",
+            "name": "BOLA Alert Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                250,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const event = $input.first().json;\n\nif (event.authenticated_user !== event.object_owner) {\n  const attemptKey = `bola:${event.authenticated_user}`;\n  // Would check Redis for attempt count\n  const attemptCount = event.attempt_count || 1;\n  \n  return {\n    json: {\n      alert_type: 'bola_attempt',\n      attacker: event.authenticated_user,\n      target_owner: event.object_owner,\n      endpoint: event.endpoint,\n      attempt_count: attemptCount,\n      severity: attemptCount > 5 ? 'critical' : 'high',\n      use_case_id: 'UC-002'\n    }\n  };\n}\n\nreturn { json: { skip: true } };"
+            },
+            "id": "detect-bola",
+            "name": "Detect BOLA",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                450,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "number": [
+                        {
+                            "value1": "={{ $json.attempt_count }}",
+                            "operation": "larger",
+                            "value2": 5
+                        }
+                    ]
+                }
+            },
+            "id": "severity-check",
+            "name": "High Volume?",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 1,
+            "position": [
+                650,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ $env.XSOAR_URL }}/incident",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "name",
+                            "value": "BOLA Attack Detected - {{ $json.attacker }}"
+                        },
+                        {
+                            "name": "severity",
+                            "value": "4"
+                        },
+                        {
+                            "name": "type",
+                            "value": "API Security"
+                        }
+                    ]
+                }
+            },
+            "id": "xsoar-incident",
+            "name": "Create XSOAR Incident",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                850,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "channel": "#security-alerts",
+                "text": ":rotating_light: *BOLA Attack Detected*\n*Attacker:* {{ $json.attacker }}\n*Attempts:* {{ $json.attempt_count }}"
+            },
+            "id": "slack-alert",
+            "name": "Slack Alert",
+            "type": "n8n-nodes-base.slack",
+            "typeVersion": 2,
+            "position": [
+                850,
+                400
+            ]
+        }
+    ],
+    "connections": {
+        "BOLA Alert Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Detect BOLA",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Detect BOLA": {
+            "main": [
+                [
+                    {
+                        "node": "High Volume?",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "High Volume?": {
+            "main": [
+                [
+                    {
+                        "node": "Create XSOAR Incident",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Slack Alert",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "tags": [
+        "x-n8",
+        "api-security",
+        "UC-002"
+    ]
+}

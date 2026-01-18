@@ -1,0 +1,180 @@
+{
+    "name": "X-n8 EDR - Auto Host Isolation",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "edr/critical-alert",
+                "options": {}
+            },
+            "id": "webhook",
+            "name": "EDR Alert Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                250,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const alert = $input.first().json;\nconst autoIsolateCategories = ['ransomware', 'wiper', 'rootkit', 'bootkit', 'cryptominer'];\nconst autoIsolateSeverities = ['critical'];\n\nconst shouldIsolate = \n  autoIsolateSeverities.includes(alert.severity?.toLowerCase()) &&\n  autoIsolateCategories.some(c => alert.threatCategory?.toLowerCase().includes(c));\n\nreturn {\n  json: {\n    ...alert,\n    should_isolate: shouldIsolate,\n    isolation_reason: shouldIsolate ? `Auto-isolation: ${alert.threatCategory} detected` : null,\n    use_case_id: 'UC-066'\n  }\n};"
+            },
+            "id": "check-isolation",
+            "name": "Check Isolation Criteria",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                450,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "boolean": [
+                        {
+                            "value1": "={{ $json.should_isolate }}",
+                            "operation": "equal",
+                            "value2": true
+                        }
+                    ]
+                }
+            },
+            "id": "should-isolate",
+            "name": "Should Isolate?",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 1,
+            "position": [
+                650,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ $env.SENTINELONE_URL }}/web/api/v2.1/agents/{{ $json.hostId }}/actions/disconnect",
+                "authentication": "genericCredentialType",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "reason",
+                            "value": "={{ $json.isolation_reason }}"
+                        }
+                    ]
+                }
+            },
+            "id": "isolate-host",
+            "name": "Isolate Host (SentinelOne)",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                850,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ $env.XSOAR_URL }}/incident",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "name",
+                            "value": "CRITICAL: {{ $json.threatName }} - Host Isolated"
+                        },
+                        {
+                            "name": "severity",
+                            "value": "4"
+                        },
+                        {
+                            "name": "type",
+                            "value": "EDR Critical"
+                        }
+                    ]
+                }
+            },
+            "id": "xsoar-incident",
+            "name": "Create XSOAR Incident",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                1050,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "channel": "#incident-response",
+                "text": ":rotating_light: *CRITICAL THREAT DETECTED - HOST ISOLATED*\n*Threat:* {{ $json.threatName }}\n*Host:* {{ $json.hostname }}\n*User:* {{ $json.username }}\n*Action:* Automatic isolation executed"
+            },
+            "id": "slack-ir",
+            "name": "Alert IR Team",
+            "type": "n8n-nodes-base.slack",
+            "typeVersion": 2,
+            "position": [
+                1050,
+                350
+            ]
+        }
+    ],
+    "connections": {
+        "EDR Alert Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Check Isolation Criteria",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Check Isolation Criteria": {
+            "main": [
+                [
+                    {
+                        "node": "Should Isolate?",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Should Isolate?": {
+            "main": [
+                [
+                    {
+                        "node": "Isolate Host (SentinelOne)",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Isolate Host (SentinelOne)": {
+            "main": [
+                [
+                    {
+                        "node": "Create XSOAR Incident",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Alert IR Team",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "tags": [
+        "x-n8",
+        "edr",
+        "isolation",
+        "UC-066"
+    ]
+}
