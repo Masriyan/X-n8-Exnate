@@ -1,0 +1,122 @@
+# X-n8 Alerting Rules for Prometheus
+
+groups:
+  - name: xn8_alerts
+    rules:
+      # High Alert Volume (Alert Storm)
+      - alert: XN8AlertStorm
+        expr: rate(xn8_alerts_received_total[5m]) > 100
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Alert storm detected - {{ $value }} alerts per second"
+          description: "X-n8 is receiving an unusually high volume of alerts. Investigate for potential attack or misconfiguration."
+
+      # n8n Workflow Execution Failures
+      - alert: XN8WorkflowFailureHigh
+        expr: rate(n8n_workflow_executions_failed_total[10m]) / rate(n8n_workflow_executions_total[10m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High workflow failure rate: {{ $value | humanizePercentage }}"
+          description: "More than 10% of X-n8 workflows are failing."
+
+      # Redis Connection Issues
+      - alert: XN8RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis is down"
+          description: "X-n8 Redis (deduplication) is not responding. Alerts will not be deduplicated."
+
+      # XSOAR Integration Failures
+      - alert: XN8XSOARIntegrationFailing
+        expr: rate(xn8_xsoar_requests_failed_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "XSOAR integration failing"
+          description: "Incidents are not being created in XSOAR. Check connectivity and API key."
+
+      # High Suppression Rate (may be missing threats)
+      - alert: XN8HighSuppressionRate
+        expr: rate(xn8_alerts_suppressed_total[1h]) / rate(xn8_alerts_received_total[1h]) > 0.5
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High alert suppression rate: {{ $value | humanizePercentage }}"
+          description: "More than 50% of alerts are being suppressed. Review tuning rules."
+
+      # AI Analysis Latency
+      - alert: XN8AIAnalysisLatencyHigh
+        expr: histogram_quantile(0.95, rate(xn8_ai_analysis_duration_seconds_bucket[5m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AI analysis latency high: {{ $value }}s (p95)"
+          description: "AI triage is taking longer than expected. Check OpenAI/LLM service."
+
+      # Low True Positive Rate
+      - alert: XN8LowTruePositiveRate
+        expr: rate(xn8_incidents_true_positive_total[24h]) / rate(xn8_incidents_created_total[24h]) < 0.3
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low true positive rate: {{ $value | humanizePercentage }}"
+          description: "Less than 30% of incidents are true positives. Tuning may be required."
+
+      # Webhook Endpoint Down
+      - alert: XN8WebhookDown
+        expr: probe_success{job="xn8-webhook"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "X-n8 webhook endpoint is down"
+          description: "SIEM alerts cannot reach X-n8. Check n8n service."
+
+  - name: infrastructure_alerts
+    rules:
+      # n8n Container CPU High
+      - alert: XN8ContainerCPUHigh
+        expr: rate(container_cpu_usage_seconds_total{name="xn8-n8n"}[5m]) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "n8n container CPU usage high: {{ $value | humanizePercentage }}"
+
+      # n8n Container Memory High
+      - alert: XN8ContainerMemoryHigh
+        expr: container_memory_usage_bytes{name="xn8-n8n"} / container_spec_memory_limit_bytes{name="xn8-n8n"} > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "n8n container memory usage high: {{ $value | humanizePercentage }}"
+
+      # PostgreSQL Connection Pool Exhausted
+      - alert: XN8PostgresConnectionsHigh
+        expr: pg_stat_activity_count / pg_settings_max_connections > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PostgreSQL connections high: {{ $value | humanizePercentage }}"
+
+      # Redis Memory Usage High
+      - alert: XN8RedisMemoryHigh
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis memory usage high: {{ $value | humanizePercentage }}"

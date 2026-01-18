@@ -1,0 +1,294 @@
+{
+    "annotations": {
+        "list": []
+    },
+    "editable": true,
+    "fiscalYearStartMonth": 0,
+    "graphTooltip": 0,
+    "id": null,
+    "links": [],
+    "liveNow": false,
+    "panels": [
+        {
+            "datasource": "Prometheus",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "yellow",
+                                "value": 50
+                            },
+                            {
+                                "color": "red",
+                                "value": 100
+                            }
+                        ]
+                    }
+                }
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 6,
+                "x": 0,
+                "y": 0
+            },
+            "id": 1,
+            "options": {
+                "colorMode": "value",
+                "graphMode": "area",
+                "justifyMode": "auto",
+                "orientation": "auto",
+                "reduceOptions": {
+                    "calcs": [
+                        "lastNotNull"
+                    ],
+                    "fields": "",
+                    "values": false
+                },
+                "textMode": "auto"
+            },
+            "targets": [
+                {
+                    "expr": "increase(xn8_alerts_received_total[24h])",
+                    "legendFormat": "Alerts Today"
+                }
+            ],
+            "title": "Alerts Received (24h)",
+            "type": "stat"
+        },
+        {
+            "datasource": "Prometheus",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    }
+                }
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 6,
+                "x": 6,
+                "y": 0
+            },
+            "id": 2,
+            "options": {
+                "colorMode": "value",
+                "graphMode": "area",
+                "orientation": "auto",
+                "reduceOptions": {
+                    "calcs": [
+                        "lastNotNull"
+                    ],
+                    "fields": "",
+                    "values": false
+                }
+            },
+            "targets": [
+                {
+                    "expr": "increase(xn8_incidents_created_total[24h])",
+                    "legendFormat": "Incidents"
+                }
+            ],
+            "title": "XSOAR Incidents (24h)",
+            "type": "stat"
+        },
+        {
+            "datasource": "Prometheus",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "red",
+                                "value": null
+                            },
+                            {
+                                "color": "yellow",
+                                "value": 50
+                            },
+                            {
+                                "color": "green",
+                                "value": 70
+                            }
+                        ]
+                    },
+                    "unit": "percent"
+                }
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 6,
+                "x": 12,
+                "y": 0
+            },
+            "id": 3,
+            "options": {
+                "colorMode": "value",
+                "graphMode": "none"
+            },
+            "targets": [
+                {
+                    "expr": "100 * rate(xn8_incidents_true_positive_total[24h]) / rate(xn8_incidents_created_total[24h])",
+                    "legendFormat": "TP Rate"
+                }
+            ],
+            "title": "True Positive Rate",
+            "type": "stat"
+        },
+        {
+            "datasource": "Prometheus",
+            "gridPos": {
+                "h": 8,
+                "w": 6,
+                "x": 18,
+                "y": 0
+            },
+            "id": 4,
+            "options": {
+                "colorMode": "value"
+            },
+            "targets": [
+                {
+                    "expr": "histogram_quantile(0.95, rate(xn8_ai_analysis_duration_seconds_bucket[1h]))",
+                    "legendFormat": "p95 Latency"
+                }
+            ],
+            "title": "AI Analysis Latency (p95)",
+            "type": "stat"
+        },
+        {
+            "datasource": "Prometheus",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    }
+                }
+            },
+            "gridPos": {
+                "h": 10,
+                "w": 12,
+                "x": 0,
+                "y": 8
+            },
+            "id": 5,
+            "options": {
+                "legend": {
+                    "displayMode": "list",
+                    "placement": "bottom"
+                }
+            },
+            "targets": [
+                {
+                    "expr": "rate(xn8_alerts_received_total[5m])",
+                    "legendFormat": "Received"
+                },
+                {
+                    "expr": "rate(xn8_alerts_suppressed_total[5m])",
+                    "legendFormat": "Suppressed"
+                },
+                {
+                    "expr": "rate(xn8_alerts_escalated_total[5m])",
+                    "legendFormat": "Escalated"
+                }
+            ],
+            "title": "Alert Volume Over Time",
+            "type": "timeseries"
+        },
+        {
+            "datasource": "Prometheus",
+            "gridPos": {
+                "h": 10,
+                "w": 12,
+                "x": 12,
+                "y": 8
+            },
+            "id": 6,
+            "options": {
+                "legend": {
+                    "displayMode": "list",
+                    "placement": "bottom"
+                }
+            },
+            "targets": [
+                {
+                    "expr": "sum by (category) (rate(xn8_alerts_received_total[1h]))",
+                    "legendFormat": "{{ category }}"
+                }
+            ],
+            "title": "Alerts by Category",
+            "type": "piechart"
+        },
+        {
+            "datasource": "Prometheus",
+            "gridPos": {
+                "h": 10,
+                "w": 12,
+                "x": 0,
+                "y": 18
+            },
+            "id": 7,
+            "targets": [
+                {
+                    "expr": "sum by (severity) (rate(xn8_incidents_created_total[1h]))",
+                    "legendFormat": "{{ severity }}"
+                }
+            ],
+            "title": "Incidents by Severity",
+            "type": "barchart"
+        },
+        {
+            "datasource": "Prometheus",
+            "gridPos": {
+                "h": 10,
+                "w": 12,
+                "x": 12,
+                "y": 18
+            },
+            "id": 8,
+            "targets": [
+                {
+                    "expr": "topk(10, sum by (use_case_id) (increase(xn8_alerts_received_total[24h])))",
+                    "legendFormat": "{{ use_case_id }}"
+                }
+            ],
+            "title": "Top 10 Use Cases (24h)",
+            "type": "barchart"
+        }
+    ],
+    "refresh": "30s",
+    "schemaVersion": 38,
+    "style": "dark",
+    "tags": [
+        "xn8",
+        "soc",
+        "security"
+    ],
+    "templating": {
+        "list": []
+    },
+    "time": {
+        "from": "now-24h",
+        "to": "now"
+    },
+    "timepicker": {},
+    "timezone": "browser",
+    "title": "X-n8 SOC Dashboard",
+    "uid": "xn8-soc-main",
+    "version": 1,
+    "weekStart": ""
+}

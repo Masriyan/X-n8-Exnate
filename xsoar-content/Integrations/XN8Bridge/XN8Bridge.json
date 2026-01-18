@@ -1,0 +1,97 @@
+{
+    "id": "XN8Bridge",
+    "name": "X-n8 Bridge Integration",
+    "category": "Messaging",
+    "description": "Integration for receiving enriched alerts from X-n8 (Exnate) Agentic SOC platform and sending feedback",
+    "configuration": [
+        {
+            "display": "X-n8 Server URL",
+            "name": "server_url",
+            "type": 0,
+            "required": true,
+            "defaultValue": "https://n8n.company.com"
+        },
+        {
+            "display": "Webhook Secret",
+            "name": "webhook_secret",
+            "type": 4,
+            "required": false
+        },
+        {
+            "display": "Enable Feedback Loop",
+            "name": "enable_feedback",
+            "type": 8,
+            "required": false,
+            "defaultValue": true
+        }
+    ],
+    "script": {
+        "type": "python",
+        "commands": [
+            {
+                "name": "xn8-send-feedback",
+                "description": "Send incident closure feedback to X-n8 for ML learning",
+                "arguments": [
+                    {
+                        "name": "incident_id",
+                        "description": "XSOAR incident ID",
+                        "required": true
+                    },
+                    {
+                        "name": "correlation_id",
+                        "description": "X-n8 correlation ID",
+                        "required": true
+                    },
+                    {
+                        "name": "status",
+                        "description": "Closure status",
+                        "required": true
+                    },
+                    {
+                        "name": "was_true_positive",
+                        "description": "Was this a true positive?",
+                        "required": true
+                    },
+                    {
+                        "name": "analyst_notes",
+                        "description": "Analyst notes for learning",
+                        "required": false
+                    }
+                ]
+            },
+            {
+                "name": "xn8-get-enrichment",
+                "description": "Request additional enrichment from X-n8",
+                "arguments": [
+                    {
+                        "name": "indicator",
+                        "description": "Indicator to enrich",
+                        "required": true
+                    },
+                    {
+                        "name": "indicator_type",
+                        "description": "Type: ip, domain, hash, url",
+                        "required": true
+                    }
+                ]
+            },
+            {
+                "name": "xn8-trigger-playbook",
+                "description": "Trigger an X-n8 n8n workflow",
+                "arguments": [
+                    {
+                        "name": "playbook_name",
+                        "description": "Name of the n8n workflow to trigger",
+                        "required": true
+                    },
+                    {
+                        "name": "parameters",
+                        "description": "JSON parameters to pass",
+                        "required": false
+                    }
+                ]
+            }
+        ]
+    },
+    "image": "data:image/png;base64,..."
+}

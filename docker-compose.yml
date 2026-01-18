@@ -1,0 +1,218 @@
+version: '3.8'
+
+# X-n8 (Exnate) Production Docker Deployment
+# https://github.com/Masriyan/X-n8-Exnate
+
+services:
+  # ============================================
+  # n8n - Agentic Intelligence Layer
+  # ============================================
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: xn8-n8n
+    restart: always
+    ports:
+      - "5678:5678"
+    environment:
+      # n8n Configuration
+      - N8N_HOST=${N8N_HOST:-localhost}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD:-changeme}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:-your-32-char-encryption-key-here}
+      
+      # Webhook Configuration
+      - WEBHOOK_URL=${WEBHOOK_URL:-http://localhost:5678/}
+      
+      # Database Configuration (PostgreSQL)
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=n8n
+      - DB_POSTGRESDB_USER=${POSTGRES_USER:-n8n}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD:-n8npassword}
+      
+      # Execution Settings
+      - EXECUTIONS_MODE=queue
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=168
+      - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+      - EXECUTIONS_DATA_SAVE_ON_SUCCESS=all
+      - EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS=true
+      
+      # Queue Mode (for scaling)
+      - QUEUE_BULL_REDIS_HOST=redis
+      - QUEUE_BULL_REDIS_PORT=6379
+      - QUEUE_BULL_REDIS_DB=0
+      
+      # X-n8 Integration Variables
+      - XSOAR_URL=${XSOAR_URL}
+      - XSOAR_API_KEY=${XSOAR_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
+      - SLACK_CHANNEL=${SLACK_CHANNEL:-#soc-alerts}
+      - SENTINELONE_URL=${SENTINELONE_URL}
+      - SENTINELONE_API_KEY=${SENTINELONE_API_KEY}
+      - CROWDSTRIKE_URL=${CROWDSTRIKE_URL}
+      - CROWDSTRIKE_CLIENT_ID=${CROWDSTRIKE_CLIENT_ID}
+      - CROWDSTRIKE_CLIENT_SECRET=${CROWDSTRIKE_CLIENT_SECRET}
+      - PALO_ALTO_URL=${PALO_ALTO_URL}
+      - PALO_ALTO_API_KEY=${PALO_ALTO_API_KEY}
+      - VIRUSTOTAL_API_KEY=${VIRUSTOTAL_API_KEY}
+      
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n-workflows:/home/node/workflows:ro
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - xn8-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================
+  # n8n Workers (for queue mode scaling)
+  # ============================================
+  n8n-worker:
+    image: n8nio/n8n:latest
+    container_name: xn8-n8n-worker
+    restart: always
+    command: worker
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=n8n
+      - DB_POSTGRESDB_USER=${POSTGRES_USER:-n8n}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD:-n8npassword}
+      - EXECUTIONS_MODE=queue
+      - QUEUE_BULL_REDIS_HOST=redis
+      - QUEUE_BULL_REDIS_PORT=6379
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:-your-32-char-encryption-key-here}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      - n8n
+      - redis
+    networks:
+      - xn8-network
+    deploy:
+      replicas: 2
+
+  # ============================================
+  # PostgreSQL - Persistent Storage
+  # ============================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: xn8-postgres
+    restart: always
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-n8n}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-n8npassword}
+      - POSTGRES_DB=n8n
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - xn8-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-n8n}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # Redis - Deduplication & Queue
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    container_name: xn8-redis
+    restart: always
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - xn8-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # Nginx - Reverse Proxy & SSL Termination
+  # ============================================
+  nginx:
+    image: nginx:alpine
+    container_name: xn8-nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - n8n
+    networks:
+      - xn8-network
+
+  # ============================================
+  # Prometheus - Metrics Collection
+  # ============================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: xn8-prometheus
+    restart: always
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    networks:
+      - xn8-network
+
+  # ============================================
+  # Grafana - Dashboards & Visualization
+  # ============================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: xn8-grafana
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    depends_on:
+      - prometheus
+    networks:
+      - xn8-network
+
+volumes:
+  n8n_data:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  xn8-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

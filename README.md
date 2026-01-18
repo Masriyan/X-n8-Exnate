@@ -168,14 +168,25 @@ flowchart LR
 
 ## 🚀 Quick Start
 
+### One-Command Setup
+
+```bash
+# Clone and run setup
+git clone https://github.com/Masriyan/X-n8-Exnate.git
+cd X-n8-Exnate
+chmod +x setup.sh && ./setup.sh
+```
+
+> 📖 **For detailed step-by-step instructions, see the [Implementation Guide](docs/IMPLEMENTATION-GUIDE.md)**
+
 ### Prerequisites
 
 - **n8n** v1.0+ (self-hosted or cloud)
 - **Redis** 6.0+ (for deduplication)
 - **XSOAR** 6.0+ (Cortex XSOAR)
-- **Node.js** 18+ (for local development)
+- **Docker** 20.10+ (for container deployment)
 
-### Installation
+### Manual Installation
 
 ```bash
 # Clone the repository

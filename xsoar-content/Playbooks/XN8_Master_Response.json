@@ -1,0 +1,290 @@
+{
+    "id": "X-n8 Master Response",
+    "name": "X-n8 Master Response",
+    "description": "Master playbook for handling X-n8 enriched incidents with intelligent routing",
+    "version": -1,
+    "starttaskid": "0",
+    "tasks": {
+        "0": {
+            "id": "0",
+            "taskid": "start",
+            "type": "start",
+            "task": {
+                "id": "start",
+                "name": "Start",
+                "type": "start"
+            },
+            "nexttasks": {
+                "#none#": [
+                    "1"
+                ]
+            }
+        },
+        "1": {
+            "id": "1",
+            "taskid": "extract-xn8-metadata",
+            "type": "regular",
+            "task": {
+                "id": "extract-xn8-metadata",
+                "name": "Extract X-n8 Metadata",
+                "description": "Extract AI analysis results from X-n8 enrichment",
+                "script": "|||SetMultipleValues",
+                "inputs": [
+                    {
+                        "key": "xn8_severity_score",
+                        "value": "${incident.xn8severityscore}"
+                    },
+                    {
+                        "key": "xn8_confidence",
+                        "value": "${incident.xn8confidence}"
+                    },
+                    {
+                        "key": "xn8_ai_summary",
+                        "value": "${incident.xn8aisummary}"
+                    },
+                    {
+                        "key": "xn8_mitre_techniques",
+                        "value": "${incident.xn8mitremapping}"
+                    }
+                ]
+            },
+            "nexttasks": {
+                "#none#": [
+                    "2"
+                ]
+            }
+        },
+        "2": {
+            "id": "2",
+            "taskid": "extract-indicators",
+            "type": "playbook",
+            "task": {
+                "id": "extract-indicators",
+                "name": "Entity Enrichment - Generic v3",
+                "playbookId": "Entity Enrichment - Generic v3"
+            },
+            "nexttasks": {
+                "#none#": [
+                    "3"
+                ]
+            }
+        },
+        "3": {
+            "id": "3",
+            "taskid": "route-by-type",
+            "type": "condition",
+            "task": {
+                "id": "route-by-type",
+                "name": "Route by Incident Type",
+                "description": "Route to specialized playbook based on incident type"
+            },
+            "conditions": [
+                {
+                    "label": "EDR",
+                    "condition": [
+                        [
+                            "${incident.type}",
+                            "containsGeneral",
+                            "EDR"
+                        ]
+                    ]
+                },
+                {
+                    "label": "IAM",
+                    "condition": [
+                        [
+                            "${incident.type}",
+                            "containsGeneral",
+                            "IAM"
+                        ]
+                    ]
+                },
+                {
+                    "label": "Email",
+                    "condition": [
+                        [
+                            "${incident.type}",
+                            "containsGeneral",
+                            "Email"
+                        ]
+                    ]
+                },
+                {
+                    "label": "Cloud",
+                    "condition": [
+                        [
+                            "${incident.type}",
+                            "containsGeneral",
+                            "Cloud"
+                        ]
+                    ]
+                },
+                {
+                    "label": "Network",
+                    "condition": [
+                        [
+                            "${incident.type}",
+                            "containsGeneral",
+                            "Network"
+                        ]
+                    ]
+                }
+            ],
+            "nexttasks": {
+                "EDR": [
+                    "4"
+                ],
+                "IAM": [
+                    "5"
+                ],
+                "Email": [
+                    "6"
+                ],
+                "Cloud": [
+                    "7"
+                ],
+                "Network": [
+                    "8"
+                ],
+                "#default#": [
+                    "9"
+                ]
+            }
+        },
+        "4": {
+            "id": "4",
+            "taskid": "edr-response",
+            "type": "playbook",
+            "task": {
+                "id": "edr-response",
+                "name": "X-n8 EDR Response",
+                "playbookId": "X-n8 EDR Response"
+            },
+            "nexttasks": {
+                "#none#": [
+                    "10"
+                ]
+            }
+        },
+        "5": {
+            "id": "5",
+            "taskid": "iam-response",
+            "type": "playbook",
+            "task": {
+                "id": "iam-response",
+                "name": "X-n8 IAM Response",
+                "playbookId": "X-n8 IAM Response"
+            },
+            "nexttasks": {
+                "#none#": [
+                    "10"
+                ]
+            }
+        },
+        "6": {
+            "id": "6",
+            "taskid": "email-response",
+            "type": "playbook",
+            "task": {
+                "id": "email-response",
+                "name": "X-n8 Email Response",
+                "playbookId": "X-n8 Email Response"
+            },
+            "nexttasks": {
+                "#none#": [
+                    "10"
+                ]
+            }
+        },
+        "7": {
+            "id": "7",
+            "taskid": "cloud-response",
+            "type": "playbook",
+            "task": {
+                "id": "cloud-response",
+                "name": "X-n8 Cloud Response",
+                "playbookId": "X-n8 Cloud Response"
+            },
+            "nexttasks": {
+                "#none#": [
+                    "10"
+                ]
+            }
+        },
+        "8": {
+            "id": "8",
+            "taskid": "network-response",
+            "type": "playbook",
+            "task": {
+                "id": "network-response",
+                "name": "X-n8 Network Response",
+                "playbookId": "X-n8 Network Response"
+            },
+            "nexttasks": {
+                "#none#": [
+                    "10"
+                ]
+            }
+        },
+        "9": {
+            "id": "9",
+            "taskid": "generic-response",
+            "type": "playbook",
+            "task": {
+                "id": "generic-response",
+                "name": "Generic Alert Response",
+                "playbookId": "Generic Alert Response"
+            },
+            "nexttasks": {
+                "#none#": [
+                    "10"
+                ]
+            }
+        },
+        "10": {
+            "id": "10",
+            "taskid": "send-feedback",
+            "type": "regular",
+            "task": {
+                "id": "send-feedback",
+                "name": "Send Feedback to X-n8",
+                "description": "Send closure feedback for ML learning",
+                "script": "XN8Bridge|||xn8-send-feedback",
+                "inputs": [
+                    {
+                        "key": "incident_id",
+                        "value": "${incident.id}"
+                    },
+                    {
+                        "key": "correlation_id",
+                        "value": "${incident.xn8correlationid}"
+                    },
+                    {
+                        "key": "status",
+                        "value": "${incident.status}"
+                    },
+                    {
+                        "key": "was_true_positive",
+                        "value": "${incident.closeReason}",
+                        "default": "true"
+                    }
+                ]
+            },
+            "nexttasks": {
+                "#none#": [
+                    "11"
+                ]
+            }
+        },
+        "11": {
+            "id": "11",
+            "taskid": "end",
+            "type": "end",
+            "task": {
+                "id": "end",
+                "name": "End",
+                "type": "end"
+            }
+        }
+    }
+}
